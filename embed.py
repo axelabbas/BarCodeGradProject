@@ -1,7 +1,5 @@
 import cv2
-from tkinter import filedialog
-from moviepy.editor import VideoFileClip
-
+import subprocess
 
 def watermark_bitstream(image_path, binarize=True, threshold=128):
  
@@ -21,17 +19,15 @@ def watermark_bitstream(image_path, binarize=True, threshold=128):
     
     return bitstream
 
-def add_audio_to_video(input_video_path, video_without_audio_path, output_with_audio_path):
-    # Extract audio from the original video
-    original_video = VideoFileClip(input_video_path)
-    audio = original_video.audio
-    
-    # Load the video without audio
-    video = VideoFileClip(video_without_audio_path)
-    
-    # Set the extracted audio to the new video and write the final video
-    final_video = video.set_audio(audio)
-    final_video.write_videofile(output_with_audio_path, codec="libx264")
+def extract_audio(input_video, output_audio):
+    subprocess.run([
+        "ffmpeg", "-i", input_video, "-q:a", "0", "-map", "a", output_audio
+    ], check=True)
+def merge_audio_video(watermarked_video, extracted_audio, output_video):
+    subprocess.run([
+        "ffmpeg", "-i", watermarked_video, "-i", extracted_audio, 
+        "-c:v", "copy", "-c:a", "aac", "-strict", "experimental", output_video
+    ], check=True)
 
 def read_video_as_frames_rgb(video_path):
     frames = []
@@ -46,35 +42,14 @@ def read_video_as_frames_rgb(video_path):
 
 def write_frames_to_video_rgb(frames, output_path, fps):
     height, width, _ = frames[0].shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(*'FFV1')
+
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
     for frame in frames:
         out.write(frame)
     out.release()
-# def embed_watermark_in_frame(frame, W, w_index):
-#     height, width, _ = frame.shape
-#     for row in range(height):
-#         for col in range(width):
-#             for channel in range(3):  # Iterate over B, G, R channels
-#                 if w_index >= len(W):
-#                     return w_index, True  # Return if watermark is fully embedded
-#                 currentW = W[w_index]
-#                 pixel_binary = bin(frame[row, col, channel])
-#                 pixel_binary_after = pixel_binary[:-1] + str(currentW)
-#                 frame[row, col, channel] = int(pixel_binary_after, 2)
-#                 w_index += 1
-#     return w_index, False  # Continue if watermark is not fully embedded
-def embed_watermark_across_frames(frames, W):
-    """
-    Embeds the watermark bitstream into the video frames in a column-first manner.
-    
-    Args:
-        frames: List of video frames (each frame is a 3D NumPy array).
-        W: Watermark bitstream (string of '0's and '1's).
 
-    Returns:
-        Modified frames with the watermark embedded.
-    """
+def embed_watermark_across_frames(frames, W):
     height, width, _ = frames[0].shape  # Dimensions of the frames
     num_frames = len(frames)  # Total number of frames
     w_index = 0  # Index for the watermark bitstream
@@ -82,24 +57,32 @@ def embed_watermark_across_frames(frames, W):
     # Iterate pixel by pixel across all frames
     for row in range(height):
         for col in range(width):
-            for channel in range(3):  # Iterate over B, G, R channels
-                for frame_index in range(num_frames):  # Loop through frames
+            for frame_index in range(num_frames):  # Loop through frames
+                for channel in range(3):  # Iterate over B, G, R channels
                     if w_index >= len(W):
                         return frames, True  # Stop if the watermark is fully embedded
                     
                     currentW = W[w_index]  # Get current watermark bit
                     frame = frames[frame_index]  # Current frame
-                    pixel_binary = bin(frame[row, col, channel])  # Convert pixel to binary
-                    pixel_binary_after = pixel_binary[:-1] + str(currentW)  # Replace LSB
-                    frame[row, col, channel] = int(pixel_binary_after, 2)  # Convert back
+                    pixel_binary = f'{frame[row, col, channel]:08b}'
+                    pixel_binary_after = pixel_binary[:-1] + currentW
+                    frame[row, col, channel] = int(pixel_binary_after, 2)
+                    print(
+                        f"Embedding bit: {currentW} into pixel (Row: {row}, Col: {col}, Frame: {frame_index}, Channel: {channel})\n"
+                        f"Original Binary: {pixel_binary}, Modified Binary: {pixel_binary_after}"
+                    )
+
                     w_index += 1  # Move to the next bit
 
     return frames, False  # Return frames if watermark embedding isn't complete
 def processing_rgb():
+    W = watermark_bitstream("input/watermark.png") 
     inputvidpath = "input/video.mp4"
-    W = watermark_bitstream("input/watermark.png")
-    video_without_audio_path = "watermarked/video_without_audio.mp4"
-    output_with_audio_path = "watermarked/watermarked_video_with_audio.mp4"
+
+    extracted_audio = "watermarked/extracted_audio.aac"
+
+    video_without_audio_path = "watermarked/video_without_audio.avi"
+    video_with_audio_path = "watermarked/video_with_audio.avi"
     
     # Read video frames
     frames = read_video_as_frames_rgb(inputvidpath)
@@ -116,7 +99,11 @@ def processing_rgb():
     write_frames_to_video_rgb(frames, video_without_audio_path, fps=16)
     
     # Reattach original audio to the watermarked video
-    add_audio_to_video(inputvidpath, video_without_audio_path, output_with_audio_path)
+    # add_audio_to_video(inputvidpath, video_without_audio_path, output_with_audio_path)
+    extract_audio(inputvidpath, extracted_audio)
+    merge_audio_video(video_without_audio_path, extracted_audio, video_with_audio_path)
+
+
 
 
 processing_rgb()
