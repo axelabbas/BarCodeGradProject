@@ -1,6 +1,6 @@
 import cv2
 import subprocess
-
+from qrmanager import qrcoder
 def watermark_bitstream(image_path, binarize=True, threshold=128):
  
     # Load the image in grayscale
@@ -21,11 +21,12 @@ def watermark_bitstream(image_path, binarize=True, threshold=128):
 
 def extract_audio(input_video, output_audio):
     subprocess.run([
-        "ffmpeg", "-i", input_video, "-q:a", "0", "-map", "a", output_audio
+        "ffmpeg", "-y", "-i", input_video, "-q:a", "0", "-map", "a", output_audio
     ], check=True)
+
 def merge_audio_video(watermarked_video, extracted_audio, output_video):
     subprocess.run([
-        "ffmpeg", "-i", watermarked_video, "-i", extracted_audio, 
+        "ffmpeg", "-y", "-i", watermarked_video, "-i", extracted_audio, 
         "-c:v", "copy", "-c:a", "aac", "-strict", "experimental", output_video
     ], check=True)
 
@@ -67,16 +68,13 @@ def embed_watermark_across_frames(frames, W):
                     pixel_binary = f'{frame[row, col, channel]:08b}'
                     pixel_binary_after = pixel_binary[:-1] + currentW
                     frame[row, col, channel] = int(pixel_binary_after, 2)
-                    print(
-                        f"Embedding bit: {currentW} into pixel (Row: {row}, Col: {col}, Frame: {frame_index}, Channel: {channel})\n"
-                        f"Original Binary: {pixel_binary}, Modified Binary: {pixel_binary_after}"
-                    )
 
                     w_index += 1  # Move to the next bit
 
     return frames, False  # Return frames if watermark embedding isn't complete
 def processing_rgb():
-    W = watermark_bitstream("input/watermark.png") 
+    qrcoder.image_to_qr("input/smallwm.png", "input/qr.png")
+    W = watermark_bitstream("input/qr.png") 
     inputvidpath = "input/video.mp4"
 
     extracted_audio = "watermarked/extracted_audio.aac"

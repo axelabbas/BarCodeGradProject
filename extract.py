@@ -1,8 +1,6 @@
 import cv2
-from tkinter import filedialog
-from moviepy.editor import VideoFileClip
 import numpy as np
-
+from qrmanager import qrcoder
 
 def read_video_as_frames_rgb(video_path):
     frames = []
@@ -39,27 +37,37 @@ def extract_watermark_from_frames(frames, watermark_size):
                     lsb += str(pixel_lsb)
                     w_index += 1
     return lsb, False  # Continue if watermark is not fully embedded
-def save_originalWatermark(binary_data, savepath):
+def saveBinaryStrToImg(binary_data, savepath):
     num_bits = len(binary_data)
-    size = int(np.sqrt(num_bits))  
-    pixel_values = np.array([255 if bit == '1' else 0 for bit in binary_data])
+    size = int(np.sqrt(num_bits))
+    print(num_bits)
+    print(size)
+    bits = []
+    for bit in binary_data:
+        bits.append(255 if bit == '1' else 0)
+
+    pixel_values = np.array(bits)
     pixel_values = pixel_values.reshape((size, size)).astype(np.uint8)
 
     cv2.imwrite(savepath,pixel_values)
 
 def extract_rgb():
     watermarked_video = "watermarked/video_with_audio.avi"
-    watermark_path = "extracted/original_watermark.png"
+    qr_path = "extracted/original_qr.png"
     # Read video frames
     frames = read_video_as_frames_rgb(watermarked_video)
-    watermark_size = 150*150
+    qrcode_size = 338*338
     # Embed watermark bits across frames
-    watermark_bits, watermark_completed = extract_watermark_from_frames(frames, watermark_size=watermark_size)
+    qrcode_bits, qr_completed = extract_watermark_from_frames(frames, watermark_size=qrcode_size)
 
-    if watermark_completed:
-        print("Watermark bits have been fully embedded across frames.")
+    if qr_completed:
+        print("bits have been fully extracted")
     else:
         print("Watermark embedding ended prematurely (not enough capacity).")
 
-    save_originalWatermark(watermark_bits, watermark_path)
+    saveBinaryStrToImg(qrcode_bits, qr_path)
+    watermark_string = qrcoder.decode_qr_from_image(qr_path)[0]
+    saveBinaryStrToImg(watermark_string, "extracted/original_watermark.png")
+
+
 extract_rgb()
