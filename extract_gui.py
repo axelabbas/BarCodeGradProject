@@ -2,8 +2,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 from tkinter import filedialog
 import cv2
-import subprocess
-
+import numpy as np
 from qrmanager import qrcoder
 
 class WatermarkingPage:
@@ -21,32 +20,23 @@ class WatermarkingPage:
         self.root.config(bg="#cfccc6")
 
         resultsLabel = tk.Label(self.root, text ="Results", font =("Verdana", 16))
-        resultsLabel.grid(row = 0, column = 2, padx = 10, pady = 10)
+        resultsLabel.grid(row = 0, column = 1, padx = 10, pady = 10)
 
-
-        
-        
-        startBtn = tk.Button(self.root,text="Start Watermarking", command= self.startWatermarking)
+        startBtn = tk.Button(self.root,text="Start Extraction", command= self.startExtraction)
         startBtn.grid(row=0,column=0)
         
-        selectCoverBtn = tk.Button(self.root, text ="Select cover image",
+        selectCoverBtn = tk.Button(self.root, text ="Select Watermarked Video",
                             command = self.uploadCover)
         selectCoverBtn.grid(row = 2, column = 0, padx = 10, pady = 10)
 
         self.videoLabel = tk.Label(self.root)
         self.videoLabel.grid(row=1,column=0)
-        
-        selectWatermarkBtn = tk.Button(self.root, text ="Select watermark",
-                            command = self.uploadWatermark)
-        selectWatermarkBtn.grid(row = 2, column = 1, padx = 10, pady = 10)
 
         self.watermarkImgLabel = tk.Label(self.root)
         self.watermarkImgLabel.grid(row=1,column=1)
 
-        self.watermarkedVideoLabel = tk.Label(self.root)
-        self.watermarkedVideoLabel.grid(row=1,column=2)
-
-    
+        self.qrcodeLabel = tk.Label(self.root)
+        self.qrcodeLabel.grid(row=1,column=2)
 
         self.watermarkImagePath = ""
 
@@ -89,99 +79,39 @@ class WatermarkingPage:
     def saveResults(self):
         cv2.imwrite("watermarked/watermarked.avi", self.watermarked_video)
     
-    def startWatermarking(self):
-        qrcoder.image_to_qr("input/smallwm.png", "input/qr.png")
-        W = watermark_bitstream("input/qr.png") 
-        W =  watermark_bitstream(self.watermarkImagePath) 
-        
+    def startExtraction(self):
+        watermarked_video = "watermarked/video_with_audio.avi"
+        qr_path = "extracted/original_qr.png"
+        watermark_path = "extracted/original_watermark.png"
         # Read video frames
-        frames = read_video_as_frames_rgb(self.videoPath)
-        
+        frames = read_video_as_frames_rgb(watermarked_video)
+        qrcode_size = 338*338
         # Embed watermark bits across frames
-        frames, watermark_completed = embed_watermark_across_frames(frames, W)
+        qrcode_bits, qr_completed = extract_watermark_from_frames(frames, watermark_size=qrcode_size)
 
-        if watermark_completed:
-            print("Watermark bits have been fully embedded across frames.")
+        if qr_completed:
+            print("bits have been fully extracted")
         else:
             print("Watermark embedding ended prematurely (not enough capacity).")
 
-        # Write the modified frames back into a video
-        write_frames_to_video_rgb(frames, self.video_without_audio_path, fps=16)
-        
-        # Reattach original audio to the watermarked video
-        # add_audio_to_video(inputvidpath, video_without_audio_path, output_with_audio_path)
-        extract_audio(self.videoPath, self.extractedAudioPath)
-        vid = cv2.VideoCapture(self.video_without_audio_path) 
-        _, frame = vid.read() 
-        opencv_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA) 
-        captured_image = Image.fromarray(opencv_image) 
-        photo_image = ImageTk.PhotoImage(image=captured_image.resize((200,200))) 
-        self.watermarkedVideoLabel.photo_image = photo_image 
-        self.watermarkedVideoLabel.configure(image=photo_image) 
-        merge_audio_video(self.video_without_audio_path, self.extractedAudioPath, self.video_with_audio_path)
+        saveBinaryStrToImg(qrcode_bits, qr_path)
+        watermark_string = qrcoder.decode_qr_from_image(qr_path)[0]
+        saveBinaryStrToImg(watermark_string, watermark_path)
+
+        img = Image.open(watermark_path)
+        img = img.resize((200, 200))
+        pic = ImageTk.PhotoImage(img)
+        self.qrcodeLabel.config(image=pic)
+        self.qrcodeLabel.image = pic
+
+        img = Image.open(qr_path)
+        img = img.resize((200, 200))
+        pic = ImageTk.PhotoImage(img)
+        self.watermarkImgLabel.config(image=pic)
+        self.watermarkImgLabel.image = pic 
 
 
-def extract_audio(input_video, output_audio):
-    subprocess.run([
-        "ffmpeg", "-y", "-i", input_video, "-q:a", "0", "-map", "a", output_audio
-    ], check=True)
 
-def merge_audio_video(watermarked_video, extracted_audio, output_video):
-    subprocess.run([
-        "ffmpeg", "-y", "-i", watermarked_video, "-i", extracted_audio, 
-        "-c:v", "copy", "-c:a", "aac", "-strict", "experimental", output_video
-    ], check=True)
-def write_frames_to_video_rgb(frames, output_path, fps):
-    height, width, _ = frames[0].shape
-    fourcc = cv2.VideoWriter_fourcc(*'FFV1')
-
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    for frame in frames:
-        out.write(frame)
-    out.release()
-def watermark_bitstream(image_path, binarize=True, threshold=128):
-    
-        # Load the image in grayscale
-        grayscale_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        
-        # Binarize the image if requested
-        if binarize:
-            _, binary_image = cv2.threshold(grayscale_image, threshold, 255, cv2.THRESH_BINARY)
-        else:
-            binary_image = grayscale_image
-
-        # Flatten the binary image to a bitstream
-        # Here, we convert to 0 and 1 based on the pixel value being 255 or 0.
-        flat_binary_array = binary_image.flatten()
-        bitstream = ''.join('1' if bit == 255 else '0' for bit in flat_binary_array)
-        
-        return bitstream
-def embed_watermark_across_frames(frames, W):
-    height, width, _ = frames[0].shape  # Dimensions of the frames
-    num_frames = len(frames)  # Total number of frames
-    w_index = 0  # Index for the watermark bitstream
-    
-    # Iterate pixel by pixel across all frames
-    for row in range(height):
-        for col in range(width):
-            for frame_index in range(num_frames):  # Loop through frames
-                for channel in range(3):  # Iterate over B, G, R channels
-                    if w_index >= len(W):
-                        return frames, True  # Stop if the watermark is fully embedded
-                    
-                    currentW = W[w_index]  # Get current watermark bit
-                    frame = frames[frame_index]  # Current frame
-                    pixel_binary = f'{frame[row, col, channel]:08b}'
-                    pixel_binary_after = pixel_binary[:-1] + currentW
-                    frame[row, col, channel] = int(pixel_binary_after, 2)
-                    print(
-                        f"Embedding bit: {currentW} into pixel (Row: {row}, Col: {col}, Frame: {frame_index}, Channel: {channel})\n"
-                        f"Original Binary: {pixel_binary}, Modified Binary: {pixel_binary_after}"
-                    )
-
-                    w_index += 1  # Move to the next bit
-
-    return frames, False  # Return frames if watermark embedding isn't complete
 def read_video_as_frames_rgb(video_path):
     frames = []
     cap = cv2.VideoCapture(video_path)
@@ -191,7 +121,44 @@ def read_video_as_frames_rgb(video_path):
             break
         frames.append(frame)  # Keep original BGR format
     cap.release()
-    return frames  
+    return frames
+
+def write_frames_to_video_rgb(frames, output_path, fps):
+    height, width, _ = frames[0].shape
+    fourcc = cv2.VideoWriter_fourcc(*'FFV1')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    for frame in frames:
+        out.write(frame)
+    out.release()
+def extract_watermark_from_frames(frames, watermark_size):
+    height, width, _ = frames[0].shape
+    w_index = 0
+    lsb = ""
+    for row in range(height):
+        for col in range(width):
+            for frame_index in range(len(frames)):
+                for channel in range(3):  # Iterate over B, G, R channels
+                    frame = frames[frame_index]
+                    if w_index >= watermark_size:
+                        return lsb, True  # Return if watermark is fully extaracted
+                    pixel_binary = f'{frame[row, col, channel]:08b}'
+                    pixel_lsb = pixel_binary[-1]
+
+                    lsb += str(pixel_lsb)
+                    w_index += 1
+    return lsb, False  # Continue if watermark is not fully embedded
+def saveBinaryStrToImg(binary_data, savepath):
+    num_bits = len(binary_data)
+    size = int(np.sqrt(num_bits))
+    bits = []
+    for bit in binary_data:
+        bits.append(255 if bit == '1' else 0)
+
+    pixel_values = np.array(bits)
+    pixel_values = pixel_values.reshape((size, size)).astype(np.uint8)
+
+    cv2.imwrite(savepath,pixel_values)
+
 
 # Driver Code
 
