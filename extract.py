@@ -40,8 +40,6 @@ def extract_watermark_from_frames(frames, watermark_size):
 def saveBinaryStrToImg(binary_data, savepath):
     num_bits = len(binary_data)
     size = int(np.sqrt(num_bits))
-    print(num_bits)
-    print(size)
     bits = []
     for bit in binary_data:
         bits.append(255 if bit == '1' else 0)

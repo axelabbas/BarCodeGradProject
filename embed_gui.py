@@ -4,6 +4,8 @@ from tkinter import filedialog
 import cv2
 import subprocess
 
+from qrmanager import qrcoder
+
 class WatermarkingPage:
     
     def __init__(self):
@@ -39,7 +41,9 @@ class WatermarkingPage:
         selectWatermarkBtn.grid(row = 2, column = 1, padx = 10, pady = 10)
 
         self.watermarkImgLabel = tk.Label(self.root)
-        self.watermarkImgLabel.grid(row=1,column=1)
+        self.watermarkImgLabel.grid(row=0,column=1)
+        self.qrcodeLabel = tk.Label(self.root)
+        self.qrcodeLabel.grid(row=1,column=1)
 
         self.watermarkedVideoLabel = tk.Label(self.root)
         self.watermarkedVideoLabel.grid(row=1,column=2)
@@ -47,6 +51,7 @@ class WatermarkingPage:
     
 
         self.watermarkImagePath = ""
+        self.qrcodePath = "input/qr.png"
 
         self.watermarked_video = None
         self.extractedAudioPath = "watermarked/extracted_audio.aac"
@@ -74,6 +79,12 @@ class WatermarkingPage:
         fileTypes = [("Image files", "*.png;*.jpg;*.jpeg")]
         path = filedialog.askopenfilename(filetypes=fileTypes)
         self.watermarkImagePath = path
+        qrcoder.image_to_qr(self.watermarkImagePath, self.qrcodePath)
+        img = Image.open(self.qrcodePath)
+        img = img.resize((200, 200))
+        pic = ImageTk.PhotoImage(img)
+        self.qrcodeLabel.config(image=pic)
+        self.qrcodeLabel.image = pic
         # if file is selected
         if len(path):
             img = Image.open(path)
@@ -88,7 +99,8 @@ class WatermarkingPage:
         cv2.imwrite("watermarked/watermarked.avi", self.watermarked_video)
     
     def startWatermarking(self):
-        W =  watermark_bitstream(self.watermarkImagePath) 
+        W =  watermark_bitstream(self.qrcodePath) 
+        
         
         # Read video frames
         frames = read_video_as_frames_rgb(self.videoPath)
@@ -170,10 +182,7 @@ def embed_watermark_across_frames(frames, W):
                     pixel_binary = f'{frame[row, col, channel]:08b}'
                     pixel_binary_after = pixel_binary[:-1] + currentW
                     frame[row, col, channel] = int(pixel_binary_after, 2)
-                    print(
-                        f"Embedding bit: {currentW} into pixel (Row: {row}, Col: {col}, Frame: {frame_index}, Channel: {channel})\n"
-                        f"Original Binary: {pixel_binary}, Modified Binary: {pixel_binary_after}"
-                    )
+                   
 
                     w_index += 1  # Move to the next bit
 
